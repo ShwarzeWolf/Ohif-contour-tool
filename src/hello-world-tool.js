@@ -1,81 +1,11 @@
 import csTools from "cornerstone-tools"
 import csCore from "cornerstone-core";
 
+import * as d3 from "d3";
+
 const BaseBrushTool = csTools.importInternal("base/BaseBrushTool");
 const external = csTools.importInternal("externalModules");
 const segmentationModule = csTools.getModule('segmentation');
-
-function getCircle(
-  radius,
-  rows,
-  columns,
-  xCoord = 0,
-  yCoord = 0
-) {
-  const x0 = Math.floor(xCoord);
-  const y0 = Math.floor(yCoord);
-
-  if (radius === 1) {
-    return [[x0, y0]];
-  }
-
-  const circleArray = [];
-  let index = 0;
-
-  for (let y = -radius; y <= radius; y++) {
-    const yCoord = y0 + y;
-
-    if (yCoord > rows || yCoord < 0) {
-      continue;
-    }
-
-    for (let x = -radius; x <= radius; x++) {
-      const xCoord = x0 + x;
-
-      if (xCoord >= columns || xCoord < 0) {
-        continue;
-      }
-
-      if (x * x + y * y < radius * radius) {
-        circleArray[index++] = [x0 + x, y0 + y];
-      }
-    }
-  }
-
-  return circleArray;
-}
-
-function eraseIfSegmentIndex(
-  pixelIndex,
-  pixelData,
-  segmentIndex
-) {
-  if (pixelData[pixelIndex] === segmentIndex) {
-    pixelData[pixelIndex] = 0;
-  }
-}
-
-function drawBrushPixels(
-  pointerArray,
-  pixelData,
-  segmentIndex,
-  columns,
-  shouldErase = false
-) {
-  const getPixelIndex = (x, y) => y * columns + x;
-
-  pointerArray.forEach(point => {
-    const spIndex = getPixelIndex(...point);
-
-    if (shouldErase) {
-      eraseIfSegmentIndex(spIndex, pixelData, segmentIndex);
-    } else {
-      pixelData[spIndex] = segmentIndex;
-    }
-  });
-}
-
-
 
 export default class CountourFillTool extends BaseBrushTool {
   constructor(props = {}) {
@@ -95,6 +25,7 @@ export default class CountourFillTool extends BaseBrushTool {
     this.draw = this.draw.bind(this);
     this.init = this.init.bind(this);
      }
+
      init(evt){
        const eventData = evt.detail;
        const element = eventData.element;
@@ -129,6 +60,7 @@ export default class CountourFillTool extends BaseBrushTool {
     this.init(evt);
 
     const {element, currentPoints } = eventData;
+
     this.startCoords = currentPoints.image;
 
     this._drawing = true;
@@ -147,39 +79,61 @@ export default class CountourFillTool extends BaseBrushTool {
     this.proceedCalculations(evt);
   }
 
-    proceedCalculations(evt){
-    console.log("calculations. Dots start:" + JSON.stringify(this.startCoords) + "Dots finish: " + JSON.stringify(this.finishCoords));
+
+  proceedCalculations(evt){
     //logic of getting coordinates to brush
-    this.draw(evt);
-  }
+    //get Image
+    const image = evt.detail.image;
+    const imagePixelData = image.getPixelData();
+    const imageWidth = image.width;
+    const imageHeight = image.height;
 
-    draw(evt){
-    console.log("we are drawing something");
+    //cut fragment for count threshold
+    let xS = this.startCoords.x.valueOf();
+    let yS = this.startCoords.y.valueOf();
+    let xE = this.finishCoords.x.valueOf();
+    let yE = this.finishCoords.y.valueOf();
+    const highlFragment = cutHilghFragm(xS, yS, xE, yE, imagePixelData);
 
-    const pointerArray1 = getCircle(1, this.rows, this.columns, this.startCoords.x, this.startCoords.y);
-      const pointerArray2 = getCircle(1, this.rows, this.columns, this.finishCoords.x, this.finishCoords.y);
+    //count threshold
+    const mean_threshold = mean_thresh(highlFragment);
+    console.log(mean_threshold);
+
+    //TODO get fragment
+
+    //prepare data for search
+    const preparedData = prepareDataForSearch(imagePixelData, imageWidth, imageHeight);
+
+    //search contours
+    const arrayPolig = searchCont(preparedData, mean_threshold, imageWidth, imageHeight);
+
+   this.draw(evt, arrayPolig);
+  };
+
+    draw(evt, points){
     const { labelmap2D, labelmap3D, shouldErase } = this.paintEventData;
-
-    drawBrushPixels(
-      pointerArray1,
-      labelmap2D.pixelData,
-      labelmap3D.activeSegmentIndex,
-      this.columns,
-      shouldErase
-    );
-
-      drawBrushPixels(
-        pointerArray2,
-        labelmap2D.pixelData,
-        labelmap3D.activeSegmentIndex,
-        this.columns,
-        shouldErase
-      );
+    const columns = this.columns;
+ // console.log(points.length);
+    for(let i = 0; i < points.length; ++i ){
+      for (let k = 0; k < points[i].length; ++k) {
+        for (let j = 0; j < points[i][k].length; ++j) {
+          let curPoint = roundPoint(points[i][0][j]);
+          console.log(curPoint);
+          drawBrushPixels(
+            [curPoint],
+            labelmap2D.pixelData,
+            labelmap3D.activeSegmentIndex,
+            columns,
+            shouldErase
+          );//*/
+        }
+      }
+    }
 
     external.cornerstone.updateImage(evt.detail.element); //*/
   }
 
-    _paint(evt) {
+    _paint() {
       return null;
     }
 
@@ -188,35 +142,78 @@ export default class CountourFillTool extends BaseBrushTool {
   }
 }
 
-/*
-import csTools from "cornerstone-tools";
-import * as d3 from "d3";
-const getNewContext = csTools.importInternal("drawing/getNewContext");
-const BaseBrushTool = csTools.importInternal("base/BaseBrushTool");
-//TODO Otsu threshold
-//TODO search contours function
-//TODO draw cont
-//TODO fragment по точке + все на фрагмент перенести
-//TODO выделение
-//тест на разных снимках, исправить все неточности(цвет,размерность)
-function
-
-
-  preMouseDownCallback(evt) {
-    console.log("Threshold:");
-    const eventData = evt.detail;
-    const { image, element } = eventData;
-
-
-    //console.log(element.cornestone-canvas);
-    //const context = getNewContext(element.cornestone-canvas);
-    //let projection = d3.geoIdentity().scale(imageWidth / imageWidth);
-    //const path = d3.geoPath(projection, context);
-    //context.strokeStyle = "aqua";
-    //context.lineWidth = "2";
-    //context.beginPath();
-    //path(contours.contour(prepareDataForSearch(PixelData,imageWidth,imageHeight), threshold_mean));
-    //context.stroke();
-
+function eraseIfSegmentIndex(
+  pixelIndex,
+  pixelData,
+  segmentIndex
+) {
+  if (pixelData[pixelIndex] === segmentIndex) {
+    pixelData[pixelIndex] = 0;
+  }
 }
-*/
+
+function drawBrushPixels(
+  pointerArray,
+  pixelData,
+  segmentIndex,
+  columns,
+  shouldErase = false
+) {
+  const getPixelIndex = (x, y) => y * columns + x;
+
+  pointerArray.forEach(point => {
+    const spIndex = getPixelIndex(...point);
+
+    if (shouldErase) {
+      eraseIfSegmentIndex(spIndex, pixelData, segmentIndex);
+    } else {
+      pixelData[spIndex] = segmentIndex;
+    }
+  });
+}
+
+function mean_thresh(highlData) {
+  let threshold = 0;
+  let sum = 0;
+  for(let i = 0; i < highlData.length; i++){
+    sum = sum + highlData[i];
+  }
+  threshold = sum/highlData.length;
+  return threshold; //check
+}
+
+function cutHilghFragm(xS, yS, xE, yE, imagePixelData) {
+  let xStart = Math.round(xS);
+  let yStart = Math.round(yS);
+  let xEnd = Math.round(xE);
+  let yEnd = Math.round(yE);
+  let widthHighl = Math.abs(xStart-xEnd);
+  let heightHighl = Math.abs(yStart-yEnd);
+  let distance = widthHighl * heightHighl;
+  let xCut = Math.min(xStart,xEnd);
+  let yCut = Math.min(yStart,yEnd);
+  let beginCut = xCut * yCut;
+  let endCut = beginCut + distance;
+  return imagePixelData.slice(beginCut, endCut);
+}
+
+function prepareDataForSearch(fragmData, fragmWidth, fragmHeight) {
+  const values = new Float64Array(fragmWidth * fragmHeight);
+  //StackBlur.R(imageData, 3); TODO import function
+  for (let j = 0, k = 0; j < fragmHeight; ++j) {
+    for (let i = 0; i < fragmWidth; ++i, ++k) {
+      values[k] = fragmData[(k << 2)]; //check
+    }
+  }
+  return values;
+}
+
+function searchCont(preparedData, mean_thresh, fragmWidth, fragmHeight){
+  let contoursArray = d3.contours().size([fragmWidth, fragmHeight]);
+  let contours = contoursArray.contour(preparedData, mean_thresh);
+  return contours.coordinates;
+}
+
+function roundPoint(coordinates){
+  return [ Math.round(coordinates[0]), Math.round(coordinates[1]) ];
+}
