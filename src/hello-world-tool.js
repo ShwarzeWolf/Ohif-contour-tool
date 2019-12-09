@@ -89,18 +89,46 @@ export default class CountourFillTool extends BaseBrushTool {
 
     super(props, defaultProps);
 
-    this._drawing = false;
     this.preMouseDownCallback = this.preMouseDownCallback.bind(this);
     this._drawingMouseUpCallback = this._drawingMouseUpCallback.bind(this);
     this.proceedCalculations = this.proceedCalculations.bind(this);
     this.draw = this.draw.bind(this);
-    this.touchDragCallback = this._paint.bind(this);
+    this.init = this.init.bind(this);
      }
+     init(evt){
+       const eventData = evt.detail;
+       const element = eventData.element;
+
+       this.rows = eventData.image.rows;
+       this.columns = eventData.image.columns;
+
+       const { configuration, getters } = segmentationModule;
+
+       const {
+         labelmap2D,
+         labelmap3D,
+         currentImageIdIndex,
+         activeLabelmapIndex,
+       } = getters.labelmap2D(element);
+
+       const shouldErase =
+         super._isCtrlDown(eventData) || this.configuration.alwaysEraseOnClick;
+
+       this.paintEventData = {
+         labelmap2D,
+         labelmap3D,
+         currentImageIdIndex,
+         activeLabelmapIndex,
+         shouldErase,
+       };
+     }
+
      preMouseDownCallback(evt) {
     const eventData = evt.detail;
 
-    const {element, currentPoints } = eventData;
+    this.init(evt);
 
+    const {element, currentPoints } = eventData;
     this.startCoords = currentPoints.image;
 
     this._drawing = true;
@@ -108,7 +136,7 @@ export default class CountourFillTool extends BaseBrushTool {
     return true;
   }
 
-   _drawingMouseUpCallback(evt) {
+    _drawingMouseUpCallback(evt) {
     const eventData = evt.detail;
     const { element, currentPoints } = eventData;
 
@@ -119,39 +147,43 @@ export default class CountourFillTool extends BaseBrushTool {
     this.proceedCalculations(evt);
   }
 
-  proceedCalculations(evt){
+    proceedCalculations(evt){
     console.log("calculations. Dots start:" + JSON.stringify(this.startCoords) + "Dots finish: " + JSON.stringify(this.finishCoords));
     //logic of getting coordinates to brush
     this.draw(evt);
   }
 
-  draw(evt){
+    draw(evt){
     console.log("we are drawing something");
 
-    /*
-    const { rows, columns } = eventData.image;
-    const { x1, y1 } = this.startCoords;
-
-    const pointerArray1 = getCircle(10, rows, columns, x1, y1);
-
-   const { labelmap2D, labelmap3D, shouldErase } = this.paintEventData;
+    const pointerArray1 = getCircle(1, this.rows, this.columns, this.startCoords.x, this.startCoords.y);
+      const pointerArray2 = getCircle(1, this.rows, this.columns, this.finishCoords.x, this.finishCoords.y);
+    const { labelmap2D, labelmap3D, shouldErase } = this.paintEventData;
 
     drawBrushPixels(
       pointerArray1,
       labelmap2D.pixelData,
       labelmap3D.activeSegmentIndex,
-      columns,
+      this.columns,
       shouldErase
     );
 
-    external.cornerstone.updateImage(evt.detail.element);*/
+      drawBrushPixels(
+        pointerArray2,
+        labelmap2D.pixelData,
+        labelmap3D.activeSegmentIndex,
+        this.columns,
+        shouldErase
+      );
+
+    external.cornerstone.updateImage(evt.detail.element); //*/
   }
 
-  _paint(evt) {
-    return null;
-  }
+    _paint(evt) {
+      return null;
+    }
 
-  renderBrush(){
+    renderBrush(){
     return null;
   }
 }
