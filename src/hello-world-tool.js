@@ -1,8 +1,6 @@
 import csTools from "cornerstone-tools"
 import csCore from "cornerstone-core";
 
-import * as d3 from "d3";
-
 const BaseBrushTool = csTools.importInternal("base/BaseBrushTool");
 const external = csTools.importInternal("externalModules");
 const segmentationModule = csTools.getModule('segmentation');
@@ -24,6 +22,7 @@ export default class CountourFillTool extends BaseBrushTool {
     this.proceedCalculations = this.proceedCalculations.bind(this);
     this.draw = this.draw.bind(this);
     this.init = this.init.bind(this);
+    this.renderBrush = this.renderBrush.bind(this);
      }
 
      init(evt){
@@ -54,61 +53,39 @@ export default class CountourFillTool extends BaseBrushTool {
        };
      }
 
-     preMouseDownCallback(evt) {
-    const eventData = evt.detail;
+       preMouseDownCallback(evt) {
+      const eventData = evt.detail;
 
-    this.init(evt);
+      this.init(evt);
 
-    const {element, currentPoints } = eventData;
+      const {element, currentPoints } = eventData;
 
-    this.startCoords = currentPoints.image;
+      this.startCoords = currentPoints.image;
 
-    this._drawing = true;
-    super._startListeningForMouseUp(element);
-    return true;
-  }
+      this._drawing = true;
+      super._startListeningForMouseUp(element);
+      return true;
+    }
 
-    _drawingMouseUpCallback(evt) {
-    const eventData = evt.detail;
-    const { element, currentPoints } = eventData;
+      _drawingMouseUpCallback(evt) {
+      const eventData = evt.detail;
+      const { element, currentPoints } = eventData;
 
-    this.finishCoords = currentPoints.image;
+      this.finishCoords = currentPoints.image;
 
-    this._drawing = false;
-    super._stopListeningForMouseUp(element);
-    this.proceedCalculations(evt);
-  }
+      this._drawing = false;
+      super._stopListeningForMouseUp(element);
+      this.proceedCalculations(evt);
+    }
 
+    proceedCalculations(evt){
+      //calculations
+      console.log(this.startCoords);
+      console.log(this.finishCoords);
 
-  proceedCalculations(evt){
-    //logic of getting coordinates to brush
-    //get Image
-    const image = evt.detail.image;
-    const imagePixelData = image.getPixelData();
-    const imageWidth = image.width;
-    const imageHeight = image.height;
-
-    //cut fragment for count threshold
-    let xS = this.startCoords.x.valueOf();
-    let yS = this.startCoords.y.valueOf();
-    let xE = this.finishCoords.x.valueOf();
-    let yE = this.finishCoords.y.valueOf();
-    const highlFragment = cutHilghFragm(xS, yS, xE, yE, imagePixelData);
-
-    //count threshold
-    const mean_threshold = mean_thresh(highlFragment);
-    console.log(mean_threshold);
-
-    //TODO get fragment
-
-    //prepare data for search
-    const preparedData = prepareDataForSearch(imagePixelData, imageWidth, imageHeight);
-
-    //search contours
-    const arrayPolig = searchCont(preparedData, mean_threshold, imageWidth, imageHeight);
-
-   this.draw(evt, arrayPolig);
-  };
+      //let arrayPolig = [[[]]];
+     //this.draw(evt, arrayPolig);
+    };
 
     draw(evt, points){
     const { labelmap2D, labelmap3D, shouldErase } = this.paintEventData;
@@ -125,7 +102,7 @@ export default class CountourFillTool extends BaseBrushTool {
             labelmap3D.activeSegmentIndex,
             columns,
             shouldErase
-          );//*/
+          );
         }
       }
     }
@@ -136,10 +113,77 @@ export default class CountourFillTool extends BaseBrushTool {
     _paint() {
       return null;
     }
-
+/*
     renderBrush(){
     return null;
   }
+*/
+
+  renderBrush(evt) {
+    const {getters, configuration} = segmentationModule;
+    const eventData = evt.detail;
+    const viewport = eventData.viewport;
+
+    let mousePosition;
+
+    //if (this._drawing) {
+    //    mousePosition = this._lastImageCoords;
+    //} else
+    if (this._mouseUpRender) {
+      mousePosition = this._lastImageCoords;
+      this._mouseUpRender = false;
+    } else {
+      mousePosition = csTools.store.state.mousePositionImage;
+    }
+
+    if (!mousePosition) {
+      return null;
+    }
+
+    const {rows, columns} = eventData.image;
+    const {x, y} = mousePosition;
+
+    if (x < 0 || x > columns || y < 0 || y > rows) {
+      return;
+    }
+
+    const radius = 1;
+    const context = eventData.canvasContext;
+    const element = eventData.element;
+    const color = getters.brushColor(element, this._drawing);
+
+    context.setTransform(1, 0, 0, 1, 0, 0);
+
+    let circleRadius = radius * viewport.scale;
+    const mouseCoordsCanvas = window.cornerstone.pixelToCanvas(
+      element,
+      mousePosition,
+    );
+
+    const {labelmap2D} = getters.labelmap2D(element);
+
+    const getPixelIndex = (x, y) => y * columns + x;
+    const spIndex = getPixelIndex(Math.floor(x), Math.floor(y));
+    const isInside = labelmap2D.pixelData[spIndex] === 1;
+    this.shouldErase = !isInside;
+    context.beginPath();
+    context.strokeStyle = color;
+    context.fillStyle = "rgba(128,128,128,0.5)";
+    context.ellipse(
+      mouseCoordsCanvas.x,
+      mouseCoordsCanvas.y,
+      circleRadius,
+      circleRadius,
+      0,
+      0,
+      2 * Math.PI,
+    );
+    context.stroke();
+    context.fill();
+
+    this._lastImageCoords = eventData.image;
+  }
+
 }
 
 function eraseIfSegmentIndex(
@@ -170,48 +214,6 @@ function drawBrushPixels(
       pixelData[spIndex] = segmentIndex;
     }
   });
-}
-
-function mean_thresh(highlData) {
-  let threshold = 0;
-  let sum = 0;
-  for(let i = 0; i < highlData.length; i++){
-    sum = sum + highlData[i];
-  }
-  threshold = sum/highlData.length;
-  return threshold; //check
-}
-
-function cutHilghFragm(xS, yS, xE, yE, imagePixelData) {
-  let xStart = Math.round(xS);
-  let yStart = Math.round(yS);
-  let xEnd = Math.round(xE);
-  let yEnd = Math.round(yE);
-  let widthHighl = Math.abs(xStart-xEnd);
-  let heightHighl = Math.abs(yStart-yEnd);
-  let distance = widthHighl * heightHighl;
-  let xCut = Math.min(xStart,xEnd);
-  let yCut = Math.min(yStart,yEnd);
-  let beginCut = xCut * yCut;
-  let endCut = beginCut + distance;
-  return imagePixelData.slice(beginCut, endCut);
-}
-
-function prepareDataForSearch(fragmData, fragmWidth, fragmHeight) {
-  const values = new Float64Array(fragmWidth * fragmHeight);
-  //StackBlur.R(imageData, 3); TODO import function
-  for (let j = 0, k = 0; j < fragmHeight; ++j) {
-    for (let i = 0; i < fragmWidth; ++i, ++k) {
-      values[k] = fragmData[(k << 2)]; //check
-    }
-  }
-  return values;
-}
-
-function searchCont(preparedData, mean_thresh, fragmWidth, fragmHeight){
-  let contoursArray = d3.contours().size([fragmWidth, fragmHeight]);
-  let contours = contoursArray.contour(preparedData, mean_thresh);
-  return contours.coordinates;
 }
 
 function roundPoint(coordinates){
