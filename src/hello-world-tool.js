@@ -1,8 +1,10 @@
 import csTools from "cornerstone-tools"
 const BaseBrushTool = csTools.importInternal("base/BaseBrushTool");
-const external = csTools.getModule("externalModules");
 const segmentationModule = csTools.getModule('segmentation');
-const drawEllipse = csTools.importInternal("drawing/drawEllipse");
+
+const external = csTools.importInternal("externalModules");
+const path = csTools.importInternal('drawing/path');
+
 
 export default class CountourFillTool extends BaseBrushTool {
   constructor(props = {}) {
@@ -96,22 +98,58 @@ export default class CountourFillTool extends BaseBrushTool {
     let mousePosition;
 
     if (this._drawing) {
-      const context = eventData.canvasContext;
-      const element = eventData.element;
       mousePosition = this._lastImageCoords; //end ellipse point
       let startPointForDrawing = this.startCoords; //start ellipse point
+
+      if (!mousePosition) {
+        return;
+      }
+
+      const { rows, columns } = eventData.image;
+      const { x, y } = mousePosition;
+
+      if (x < 0 || x > columns || y < 0 || y > rows) {
+        return;
+      }
+
+      const radius = 1;
+      const context = this.context;
+      const element = eventData.element;
       const color = getters.brushColor(element, this._drawing);
 
-      drawEllipse(
-        this.context,
+      context.setTransform(1, 0, 0, 1, 0, 0);
+
+      const { labelmap2D } = getters.labelmap2D(element);
+
+      const getPixelIndex = (x, y) => y * columns + x;
+      const spIndex = getPixelIndex(Math.floor(x), Math.floor(y));
+      const isInside = labelmap2D.pixelData[spIndex] === 1;
+      this.shouldErase = !isInside;
+      context.beginPath();
+      context.strokeStyle = color;
+      context.fillStyle = "rgba(128,128,128,0.005)";
+
+      const startCoordsCanvas = window.cornerstone.pixelToCanvas(
         element,
         startPointForDrawing,
-        mousePosition,
-        {
-          color,
-        },
-        'pixel',
-        0.0)
+      );
+
+      let width = Math.abs(startPointForDrawing.x - mousePosition.x) * viewport.scale;
+      let height = Math.abs(startPointForDrawing.y - mousePosition.y) * viewport.scale;
+
+      context.ellipse(
+        startCoordsCanvas.x,
+        startCoordsCanvas.y,
+        width,
+        height,
+        0,
+        0,
+        2 * Math.PI,
+      );
+      context.stroke();
+      context.fill();
+
+      this._lastImageCoords = eventData.image;
     }
     else
       {
@@ -130,7 +168,7 @@ export default class CountourFillTool extends BaseBrushTool {
 
       const radius = 1;
       const context = eventData.canvasContext;
-      this.context = context;
+      this.context = eventData.canvasContext;
       const element = eventData.element;
       const color = getters.brushColor(element, this._drawing);
 
